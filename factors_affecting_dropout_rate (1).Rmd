@@ -1,0 +1,676 @@
+---
+title: "Analysis: Factors Affecting Dropout Rate"
+author: "Team Members  \nLamar Bahaydan (445008616)  \nMaria Alhejji (445008604)  \nSara
+  Alqhtani (445008574)  \nLeen AlQuwayfil (445008611)  \nFatimah Alajlan (445008622)
+  \ \nGhada Almaawy (445008546)\n"
+date: "semaster1-2025"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: false
+    number_sections: true
+    highlight: tango
+fontsize: 12pt
+geometry: margin=1in
+header-includes:
+- \usepackage{setspace}\onehalfspacing
+- \usepackage{booktabs}
+- \usepackage{caption}\captionsetup{labelfont=bf}
+---
+
+<div style="text-align:center; margin-top:90px;">
+  <img src="Math-PNU-Logo.jpeg" width="200"/>
+
+
+**Princess Nourah bint Abdulrahman University**
+**College of Computer and Information Sciences**
+**Department of Data Science & Analytics**
+
+
+ **Course**: Statistical Data Analysis – Section 53s
+ 
+ **Instructor**: Dr. Shuhrah Alghamdi
+ 
+ **Project Title:** Analysis: Factors Affecting Dropout Rate
+
+
+</div>
+\newpage
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, message = FALSE, warning = FALSE,
+   fig.align = "center",
+  fig.width = 7, fig.height = 4.5,
+  out.width = "95%",                 
+  dev = "cairo_pdf",               
+  dpi = 300
+)
+
+
+```
+
+# Introduction 
+The purpose of this statistical report is to analyze the factors that may influence the dropout rate in public schools across different U.S. states. The dataset was obtained from official educational records across multiple U.S. states during the 2018–2019 academic year, including 1,200 school-level observations, and includes several school-level indicators such as funding per student, percentage of low-income students, percentage of minority students, average test scores, and the student–teacher ratio. In this project, the dropout rate (%) is considered the main dependent variable (Y).
+
+Our goal is to understand how the dropout rate changes in relation to socioeconomic and academic factors (X variables). By identifying patterns within the data, this analysis may help schools and policymakers better understand the conditions that contribute to higher or lower dropout levels.
+
+To achieve this, we apply descriptive statistics, visual exploration, and correlation analysis to summarize the characteristics of each variable and examine their relationships with the dropout rate. We also apply simple linear regression for each predictor separately, followed by a full multiple linear regression model that includes all predictors together. This approach helps us determine whether any of these factors significantly explain variation in dropout rate.
+
+
+\newpage
+#  Data Loading 
+
+
+```{r Data Loading, echo=FALSE}
+# Adjust path to your dataset location
+data <- read.csv("education_inequality_data.csv", stringsAsFactors = FALSE)
+df<-data
+key_vars <- c(
+  "funding_per_student_usd","percent_low_income","percent_minority",
+  "avg_test_score_percent","dropout_rate_percent",
+  "internet_access_percent","student_teacher_ratio"
+)
+context_vars <- intersect(c("id","school_name","state"), names(data))
+use_cols <- unique(c(context_vars, intersect(key_vars, names(data))))
+df     <- data[, use_cols, drop = FALSE]
+num_df <- df[, sapply(df, is.numeric), drop = FALSE]
+
+missing <- setdiff(key_vars, names(df))
+if (length(missing) > 0) {
+  cat("Note: missing expected columns →", paste(missing, collapse = ", "), "\n\n")
+}
+
+```
+
+```{r tbl-peek, echo=FALSE, results='asis'}
+library(kableExtra)
+library(dplyr)
+
+
+# أخذ أول خمس صفوف للعرض
+df_show <- head(df[, !(names(df) %in% c("id", "school_name"))], 5)
+
+
+
+# طباعة الجدول مع تصغير تلقائي داخل الصفحة
+kbl(
+  df_show,
+  booktabs = TRUE,
+  caption = "Sample of the dataset (first 5 schools).",
+  align = "c"
+) %>%
+  kable_styling(
+    full_width = FALSE,
+    position = "center",
+    latex_options = c("scale_down", "hold_position"),  # لتقليص الجدول داخل الصفحة
+    font_size = 9
+  )
+
+```
+
+**id** — Unique identifier for each school entry.
+
+**school_name** — Name of the school (synthetically generated).
+
+**state** — U.S. state where the school is located.
+
+**school_type** — Type of institution: Public, Private, or Charter.
+
+**grade_level** — Primary level served by the school: Elementary, Middle, or High.
+
+**funding_per_student_usd** — Annual funding per student in U.S. dollars.
+
+**avg_test_score_percent** — Average student performance score (0–100%).
+
+**student_teacher_ratio** — Average number of students per teacher.
+
+**percent_low_income** — Percentage of students from low-income households.
+
+**percent_minority** — Percentage of students from minority backgrounds.
+
+**internet_access_percent** — Percentage of students with internet access at school.
+
+**dropout_rate_percent** — Annual dropout rate among students (as a percentage)
+
+
+
+\newpage
+
+# Descriptive Statistics 
+
+## Summary of Key Variables
+To better understand dropout rates across schools, we first calculated basic descriptive statistics. This step helps us understand tendencies in the data, how spread out the values are, and whether there are any unusual observations.
+
+
+```{r Summary of Key Variables,results='asis',echo=FALSE}
+summary_table <- data.frame(
+  Min    = sapply(num_df, \(x) min(x, na.rm = TRUE)),
+  Q1     = sapply(num_df, \(x) quantile(x, 0.25, na.rm = TRUE)),
+  Median = sapply(num_df, \(x) median(x, na.rm = TRUE)),
+  Mean   = sapply(num_df, \(x) mean(x, na.rm = TRUE)),
+  Q3     = sapply(num_df, \(x) quantile(x, 0.75, na.rm = TRUE)),
+  Max    = sapply(num_df, \(x) max(x, na.rm = TRUE)),
+  SD     = sapply(num_df, \(x) sd(x, na.rm = TRUE))
+)
+kable(round(summary_table, 2),
+      caption = " Descriptive summary for key variables .") |>
+  kable_styling(full_width = FALSE)
+```
+The descriptive statistics show several important patterns in the dataset.
+School funding per student varies widely, ranging from around $5,000 to $24,000, which indicates large differences in resources across schools. The percentage of low-income students also shows considerable spread (10% to 94%), meaning some schools serve mostly high-income families while others serve predominantly low-income communities.
+
+Student performance indicators follow the same pattern: average test scores range from 40% to 100%, showing strong differences in academic achievement across schools. 
+
+The dropout rate itself ranges from 0.5% to 14.9%, with an average around 7–8%, meaning dropout levels are generally moderate but vary notably between schools. 
+
+Overall, the table highlights clear variability in funding, demographics, and academic performance. 
+
+This variation is important because it gives a strong reason to explore whether these differences help explain changes in dropout rates. 
+
+\newpage
+
+
+# Exploratory	Data	Analysis 
+
+## Number of Schools per State
+
+```{r}
+
+# Bar chart
+stateC <- table(data$state)
+
+barplot(stateC,
+        main = "Number of Schools per State",
+        xlab = "State",
+        ylab = "Count",
+        col = "lightblue",
+        las = 2)
+
+```
+The bar plot displays the number of schools represented in each state. Texas has the highest count, followed by Florida and Georgia, while Pennsylvania has the lowest. The distribution is uneven across states, suggesting differences in sample representation and school population sizes.
+
+\newpage
+
+## Distribution of Dropout Rate
+
+
+```{r Figure 1, fig.cap="Distribution of Dropout Rate", echo=FALSE}
+drop <- df$dropout_rate_percent
+
+# mean and sd
+mean_drop <- mean(drop, na.rm = TRUE)
+sd_drop   <- sd(drop, na.rm = TRUE)
+
+# نحدد نطاق الـ X بشكل يدوي + أوسع من البيانات
+x_range <- seq(min(drop) - 5, max(drop) + 5, length = 200)
+
+# نبدأ بالرسم فقط للمحور بدون بيانات
+plot(x_range,
+     dnorm(x_range, mean_drop, sd_drop),
+     type = "l",
+     lwd = 3,
+     col = "green",
+     main = "Dropout Rate Distribution",
+     xlab = "Dropout Rate (%)",
+     ylab = "Density")
+
+# نضيف الهستوغرام فوق الخط
+
+
+# نضيف خط يوضح المتوسط
+abline(v = mean_drop, col = "black", lwd = 2, lty = 2)
+
+```
+  
+  
+The plot displays a normal density curve representing the distribution of dropout rates, centered around the sample mean (shown by the vertical dashed line). The curve uses the observed mean and standard deviation to approximate how dropout rates are spread across schools. The distribution is roughly symmetric, with most values concentrated near the mean and fewer schools appearing at very low or very high dropout rates. This visualization highlights the typical dropout level in the dataset and shows how individual schools deviate from the average.
+
+
+
+## Distribution of Funding per Student
+
+```{r ,fig.cap="Distribution of Funding per Student"}
+
+hist(data$funding_per_student_usd,
+     main = "Distribution of Funding per Student",
+     xlab = "Funding",
+     col = "moccasin",
+     border = "gray")
+
+```
+
+
+The histogram displays the distribution of funding per student across schools. 
+The values range roughly from $5,000 to $25,000, showing a wide spread in the amount of financial resources available. While the distribution is fairly even, there are slight concentrations around the mid-range and upper-middle range, suggesting that many schools receive moderate to high levels of funding. Overall, the plot indicates substantial variability in funding levels, reflecting differences in school resources that may influence educational quality and student outcomes.
+
+
+
+
+
+
+\newpage
+
+## Boxplot of Average Test Scores
+
+```{r, fig.cap="Boxplot of Average Test Scores"}
+boxplot(df$avg_test_score_percent,
+        main = "Boxplot of Average Test Scores",
+        ylab = "Test Score (%)",
+        col  = "lightblue",
+        border = "black")
+
+```
+The boxplot displays the distribution of average test scores across schools. Most scores fall between approximately 55 and 85, with a median around 70%, indicating that typical performance is moderate.
+The relatively tall box and long whiskers show that test scores vary widely among schools, and the presence of extreme values suggests that some schools have notably lower or higher performance than the rest.
+Overall, the plot reflects clear performance differences between schools rather than one consistent level across all schools.
+
+This variation is consistent with the descriptive statistics table, where the test scores show a wide range (40 to 100) and a relatively large standard deviation.
+\newpage
+## Boxplot of Low Income Percent
+
+```{r ,fig.cap="Boxplot of Low Income Percent"}
+
+boxplot(df$percent_low_income,
+        main = "Boxplot of Low-income Percentage",
+        ylab = "Percent Low-income Students",
+        col  = "tan2",
+        border = "black")
+
+```
+
+
+This boxplot shows the distribution of the percentage of low-income students across schools. The values range broadly, roughly from 20% to 90%, with a median near 55%.
+The wide box indicates substantial variation in socioeconomic status among schools, meaning some schools serve mostly low-income populations while others serve fewer.
+This diversity in low-income percentages signals meaningful socioeconomic differences, which may contribute to variations in educational outcomes such as dropout rates.
+
+
+
+\newpage
+
+## Distribution of Student Teacher Ratio
+
+```{r ,fig.cap="Distribution of Student Teacher Ratio"}
+
+hist(data$student_teacher_ratio,
+     main = "Distribution of Student Teacher Ratio",
+     xlab = "Student Teacher Ratio",
+     col = "pink",
+     border = "white")
+
+
+```
+The histogram shows how the student–teacher ratio is distributed across schools, with values ranging from about 10 to 30 students per teacher. The frequencies are fairly even across the bins, indicating that the ratios are spread out without any strong clusters or extreme values. Overall, the distribution appears moderately varied but stable, suggesting that most schools operate within a similar range of student–teacher loads.
+
+
+\newpage
+
+
+# Anlaisys
+
+## Multiple Linear Regression
+
+### Objective
+
+To determine whether the predictor variables
+(funding per student, percent low-income, average test score, and student–teacher ratio)
+have a statistically significant effect on the dropout rate.
+
+The model will help us identify which factors contribute the most to students dropping out.
+
+### Hypotheses
+We want to test whether the predictors (funding per student, % low-income students, average test score, and student-teacher ratio) have an effect on the dropout rate.
+
+**Null Hypothesis (H₀):**
+
+$$
+\beta_1 = \beta_2 = \beta_3 = \beta_4 =\beta_5 = 0
+$$
+
+None of the predictors have a significant effect on dropout rate  
+
+
+**Alternative Hypothesis (H₁):**
+
+$$
+\text{At least one } \beta_i \neq 0
+$$
+
+At least one predictor has a significant effect on dropout rate.
+
+\newpage
+### Formula 
+
+Multiple Linear Regression model:
+
+$$
+Y = \beta_0 + \beta_1 X_1 + \beta_2 X_2 + \beta_3 X_3 + \beta_4 X_4 +\beta_4 X_5+ \epsilon
+$$
+
+Where: 
+
+ Y = dropout rate (%) 
+ 
+ X_1 =funding per student 
+ 
+ X_2 =percent low-income 
+ 
+ X_3 =average test score 
+ 
+ X_4 =student-teacher ratio 
+ 
+ X_5=percent_minority
+
+### Multiple Linear Regression Implement
+```{r multy r,results='asis',echo=TRUE}
+mlr_model <- lm(dropout_rate_percent ~ funding_per_student_usd +
+                  percent_low_income +
+                  avg_test_score_percent +
+                  percent_minority+ 
+                  student_teacher_ratio,
+                  data = df)
+
+
+```
+
+```{r tidy-summary, results='asis'}
+library(broom)
+library(knitr)
+
+tidy_mlr <- tidy(mlr_model)
+tidy_mlr$term <- recode(tidy_mlr$term,
+   "(Intercept)"              = "Intercept",
+   "funding_per_student_usd"  = "Funding per student",
+   "percent_low_income"       = "% Low-income students",
+   "avg_test_score_percent"   = "Average test score",
+   "percent_minority"         = "% Minority students",
+   "student_teacher_ratio"    = "Student–teacher ratio"
+)
+kable(tidy_mlr,
+      caption = "Summary of Multiple Linear Regression Model",
+      digits = 4)
+```
+### ANOVA Table
+```{r anova ,echo=FALSE}
+
+library(broom)
+library(knitr)
+
+tidy_mlr <- tidy(anova(mlr_model))
+tidy_mlr$term <- recode(tidy_mlr$term,
+   "(Intercept)"              = "Intercept",
+   "funding_per_student_usd"  = "Funding per student",
+   "percent_low_income"       = "% Low-income students",
+   "avg_test_score_percent"   = "Average test score",
+   "percent_minority"         = "% Minority students",
+   "student_teacher_ratio"    = "Student–teacher ratio"
+)
+kable(tidy_mlr,
+      caption = "Summary of ANOVA Table",
+      digits = 4)
+```
+
+### Decision Rule
+
+At significance level α = 0.05:
+
+ • If p-value < 0.05 → Reject H_0
+ 
+→ At least one predictor significantly affects dropout rate.
+
+ • If p-value ≥ 0.05 → Fail to reject H_0
+ 
+→ Predictors do not have meaningful influence.
+
+\newpage
+
+### Interpretation
+
+The multiple linear regression model examined whether the following variables:
+
+- Funding per student (USD)
+- Percentage of low-income students
+- Average test score (percent)
+- Student–teacher ratio
+- Percentage of Minority students
+
+can predict the dropout rate (%) in schools.
+
+Based on the regression output:
+
+| Predictor                | p-value | Result                    |
+|--------------------------|---------|---------------------------|
+| Funding per student      | 0.217   | Not statistically significant |
+| % Low-income students    | 0.916   | Not statistically significant |
+| Average test score       | 0.561   | Not statistically significant |
+| Student–teacher ratio    | 0.673   | Not statistically significant |
+| % Minority students      | 0.935   | Not statistically significant |
+
+The multiple linear regression results show that the model has a very weak
+ability to explain dropout rates. The R² value is extremely small (0.0021),
+meaning the predictors together explain only 0.21% of the variation in
+dropout rate. This indicates that the overall relationship between the
+predictor variables and dropout rate is very weak.
+
+Additionally, all predictor variables have high p-values, showing that none
+of them have a statistically significant effect on dropout rate. The
+negative adjusted R² further supports that the model does not improve the
+prediction beyond using the mean alone.
+
+In simple terms, the variables included in the model (funding per student,
+percent low-income, average test score, and student-teacher ratio) do not
+meaningfully predict dropout rate in this dataset. This suggests that other
+factors — possibly behavioral, social, or school-environment factors — may
+have a stronger influence on dropout levels.
+
+
+
+## Simple Linear Regression
+### Objective
+The objective of the simple linear regression is to examine whether one predictor variable (e.g., funding per student, percent low-income, test score, or student–teacher ratio) has a significant linear relationship with the dropout rate (%).
+This helps us understand the effect of each variable separately before building the full multiple regression model.
+
+
+### Hypotheses
+
+**Null Hypothesis (H₀):**
+
+$$
+\beta_1 = 0
+$$
+There is no linear relationship between the predictor and dropout rate.
+
+
+**Alternative Hypothesis (H₁):**
+
+$$
+ \beta_i \neq 0
+$$
+The predictor does have a significant linear effect on dropout rate.
+
+\newpage
+
+### Formula 
+
+Simple Linear Regression model:
+
+$$
+Y = \beta_0 + \beta_1 X_1  + \epsilon
+$$
+
+Where: 
+
+ Y = dropout rate (%) 
+ 
+ X_1 =one predictor 
+ 
+ \beta_0 = intercept
+ 
+ \beta_1 = slope (effect of the predictor on dropout rate)
+ 
+ \varepsilon = random error term
+
+
+
+```{r s lm, results='asis',echo=TRUE}
+# Simple models: one predictor at a time
+m_funding  <- lm(dropout_rate_percent ~ funding_per_student_usd, data = df)
+m_lowinc   <- lm(dropout_rate_percent ~ percent_low_income,      data = df)
+m_tests    <- lm(dropout_rate_percent ~ avg_test_score_percent,  data = df)
+m_minority <- lm(dropout_rate_percent ~ percent_minority,        data = df)
+m_ratio    <- lm(dropout_rate_percent ~ student_teacher_ratio,   data = df)
+```
+
+
+
+```{r , results='asis' ,echo=FALSE}
+library(broom)
+library(knitr)
+library(dplyr)
+
+simple_models <- list(
+  Funding        = m_funding,
+  Low_income     = m_lowinc,
+  Test_score     = m_tests,
+  Minority       = m_minority,
+  Student_teacher= m_ratio
+)
+
+simple_summary <- lapply(names(simple_models), function(name) {
+  g <- glance(simple_models[[name]])
+  data.frame(
+    Predictor = name,
+    R2        = round(g$r.squared, 4),
+    p_value   = round(g$p.value, 4)
+  )
+}) |> bind_rows()
+
+kable(simple_summary,
+      caption = "Simple linear regression models: dropout rate vs. each predictor")
+```
+
+\newpage
+
+### Decision Rule
+
+At significance level α = 0.05:
+
+• If p-value < 0.05 → Reject H_0: predictor have a linear relationship with the dropout rate
+
+• If p-value ≥ 0.05 → Fail to reject H_0: predictor does not have a linear relationship with the dropout rate
+
+
+
+### Interpretation
+The simple linear regression models examined whether each predictor, taken one at a time, can explain the dropout rate (%) in schools.
+
+The predictors we tested are:
+- Funding per student (USD)  
+- Percentage of low-income students  
+- Average test score (percent)  
+- Percentage of minority students  
+- Student–teacher ratio  
+
+Based on the simple regression outputs, we summarize the results in the following table:
+
+| Predictor              | R²      | p-value | Result                     |
+|------------------------|---------|--------:|----------------------------|
+| Funding per student    | 0.0016  | 0.2071  | does not have linear relationship with the dropout rate |
+| % Low-income students  | 0.0000  | 0.9505  | does not have linear relationship with the dropout rate |
+| Average test score     | 0.0004  | 0.5545  | does not have linear relationship with the dropout rate |
+| % Minority students    | 0.0000  | 0.9444  | does not have linear relationship with the dropout rate |
+| Student–teacher ratio  | 0.0002  | 0.6667  | does not have llinear relationship with the dropout rate |
+
+At a significance level of 0.05, all p-values are greater than 0.05, so none of the predictors show a statistically linear relationship with dropout rate when tested alone.  
+
+The R² values are also very small (all close to 0), which means that each simple model explains almost none of the variation in dropout rate. In simple words, looking at only one factor at a time (funding, low-income %, test score, minority %, or teacher ratio) does not help us predict dropout rate well in this dataset.
+
+\newpage
+
+
+
+
+
+  
+
+       
+## Correlation matrix
+
+The correlation matrix examines how strongly each variable is related to the dropout rate and to one another. The values range from –1 to +1, where numbers close to 0 indicate very weak or no linear relationship.
+```{r , results='asis' ,echo=FALSE}
+library(dplyr)
+library(knitr)
+
+# أسماء جديدة قصيرة
+names_for_table <- c("% Dropout", "Funding", "% Low-income",
+                     "% Minority", "% Test Score", "Student Teacher Ratio")
+
+# المتغيرات الأصلية
+num_vars <- df[, c("dropout_rate_percent",
+                   "funding_per_student_usd",
+                   "percent_low_income",
+                   "percent_minority",
+                   "avg_test_score_percent",
+                   "student_teacher_ratio")]
+
+# مصفوفة الارتباط
+cor_mat <- cor(num_vars, use = "pairwise.complete.obs")
+
+# إعادة تسمية الصفوف + الأعمدة بدون تغيير البيانات الأصلية
+colnames(cor_mat) <- names_for_table
+rownames(cor_mat) <- names_for_table
+
+# طباعة الجدول بشكل جميل
+kable(round(cor_mat, 3),
+      caption = "Correlation Matrix of Key Variables")
+
+``` 
+
+Relationship with Dropout Rate
+
+ • Funding per student (r = –0.040)
+ 
+→ Almost no relationship. Higher funding does not appear to reduce dropout rates.
+
+ • % Low-income students (r = 0.002)
+ 
+→ No relationship. The proportion of low-income students does not show a meaningful pattern with dropout rate.
+
+ • % Minority students (r = –0.002)
+ 
+→ No relationship. Schools with higher minority percentages do not show higher or lower dropout rates.
+
+ • Average test score (r = –0.019)
+ 
+→ Very weak negative relationship, almost zero. Higher test scores do not meaningfully predict dropout.
+
+ • Student–teacher ratio (r = 0.014)
+ 
+→ No relationship. Class size differences do not explain dropout variation.
+
+
+All correlations with dropout rate are extremely weak (near 0), meaning no single variable shows a strong linear relationship with dropout rate.
+
+\newpage
+# Conclusion
+Overall, this project provided a clear statistical overview of the factors that might influence the dropout rate (%) in U.S. public schools. The descriptive statistics and visualizations—such as histograms and boxplots—showed that schools differ widely in funding levels, socioeconomic composition, average test scores, and student–teacher ratios. These plots highlighted broad distributions, moderate variability across schools, and differences in school contexts.
+
+When examining linear relationships, the correlation matrix revealed that dropout rate has extremely weak correlations (close to zero) with all predictors. None of the variables—funding per student, low-income percentage, minority percentage, average test score, or student–teacher ratio—showed meaningful linear association with dropout rate.
+
+The simple linear regression models confirmed this pattern: each predictor individually had a very low R² and non-significant p-values, meaning no single variable provides useful predictive power.
+
+Finally, the multiple linear regression model also showed:
+
+ • No significant predictors
+ 
+ • Very low R² (≈ 0.002)
+ 
+ • Negative adjusted R², indicating the model performs worse than simply using the mean dropout rate
+ 
+ • High p-values for all variables, including % minority, showing no statistical evidence that these factors explain dropout variation
+ 
+
+In simple terms, the variables included in this dataset do not meaningfully predict dropout rates. This suggests that dropout levels may be influenced by factors not captured here, such as behavioral challenges, school climate, family environment, mental health support, community factors, or attendance issues.
+
+In conclusion, while the dataset provides valuable insights into school characteristics, it does not explain why dropout rates differ between schools. Future studies should incorporate more detailed, student-level, or behavioral variables to better understand what truly drives student dropout and support more effective educational interventions.
+
